@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>戦闘力ランキング推移</title>
+<style>
+  :root {
+    --bg: #12141a; --panel: #1b1e27; --panel2: #232734; --border: #2e3342;
+    --text: #e6e9f0; --muted: #8b91a3; --accent: #4f8cff;
+    --up: #4caf7d; --down: #e05c5c; --gold: #e8b84b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text);
+         font-family: "Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif; min-height: 100vh; }
+
+  header { padding: 14px 24px; border-bottom: 1px solid var(--border);
+           display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 1.15rem; font-weight: 600; }
+  header h1 span { color: var(--accent); margin-right: 8px; }
+  .header-btns { display: flex; gap: 8px; align-items: center; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 16px 24px 60px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+  .panel-head { padding: 10px 14px; font-size: 0.85rem; color: var(--muted);
+                border-bottom: 1px solid var(--border); display: flex;
+                justify-content: space-between; align-items: center; gap: 10px; }
+
+  button { background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+           border-radius: 6px; padding: 7px 12px; cursor: pointer;
+           font-size: 0.82rem; font-family: inherit; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.1); }
+  button.ghost { background: none; color: var(--muted); }
+  button.ghost:hover { color: var(--text); }
+  button.danger:hover { border-color: var(--down); color: var(--down); }
+
+  select, input[type=text], input[type=datetime-local], textarea {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font-size: 0.85rem; font-family: inherit; }
+  textarea { width: 100%; min-height: 150px; resize: vertical;
+             font-family: Consolas, "Courier New", monospace; font-size: 0.8rem; line-height: 1.5; }
+  input[type=text] { min-width: 200px; }
+
+  /* 入力パネル */
+  .input-panel { margin-bottom: 14px; }
+  .input-body { padding: 14px; }
+  .input-body p.hint { color: var(--muted); font-size: 0.8rem; margin-bottom: 10px; line-height: 1.6; }
+  .input-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .input-row label { font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .result { font-size: 0.82rem; margin-top: 10px; padding: 8px 10px; border-radius: 6px; display: none; }
+  .result.ok { display: block; background: rgba(76,175,125,0.12); color: var(--up);
+               border: 1px solid rgba(76,175,125,0.35); }
+  .result.ng { display: block; background: rgba(224,92,92,0.12); color: var(--down);
+               border: 1px solid rgba(224,92,92,0.35); }
+  .result ul { margin: 6px 0 0 18px; }
+
+  .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 14px; margin-bottom: 14px; }
+  .controls label { font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .arrow { color: var(--muted); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .card .k { font-size: 0.75rem; color: var(--muted); margin-bottom: 6px; }
+  .card .v { font-size: 1.35rem; font-weight: 600; }
+  .card .s { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tab { background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+         padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
+  .tab:hover { color: var(--text); }
+  .tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { padding: 8px 10px; text-align: right; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 0.78rem; border-bottom: 1px solid var(--border);
+       cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--panel); }
+  th:hover { color: var(--text); }
+  th.sorted { color: var(--accent); }
+  td { border-bottom: 1px solid rgba(46,51,66,0.5); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--panel2); }
+  .name { text-align: left; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  .rk { color: var(--muted); }
+  .rk.top { color: var(--gold); font-weight: 600; }
+  .up { color: var(--up); }
+  .down { color: var(--down); }
+  .zero { color: var(--muted); }
+  .tag { font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; border: 1px solid; }
+  .tag.new { color: var(--accent); border-color: var(--accent); }
+  .tag.out { color: var(--down); border-color: var(--down); }
+  .empty { padding: 30px; text-align: center; color: var(--muted); }
+  .note { padding: 10px 14px; margin-bottom: 14px; font-size: 0.82rem; color: var(--muted);
+          border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 8px 8px 0; line-height: 1.6; }
+
+  .snaps { margin-top: 24px; }
+  .snaps table { font-size: 0.82rem; }
+  .snaps td { cursor: default; }
+  .snaps tbody tr:hover { background: none; }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex;
+           align-items: center; justify-content: center; padding: 20px; z-index: 10; }
+  .modal.hidden { display: none; }
+  .modal .panel { max-width: 780px; width: 100%; max-height: 88vh; overflow: auto; }
+  .mhead { display: flex; justify-content: space-between; align-items: center;
+           padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .mhead h2 { font-size: 1rem; }
+  .mhead .sub { color: var(--muted); font-size: 0.78rem; margin-left: 10px; font-weight: 400; }
+  .close { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 0 6px; }
+  .close:hover { color: var(--text); }
+  .mbody { padding: 14px; }
+
+  /* 個人の推移 */
+  .pstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 8px; margin-bottom: 14px; }
+  .pstat { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .pstat .k { font-size: 0.7rem; color: var(--muted); margin-bottom: 3px; }
+  .pstat .v { font-size: 1.05rem; font-weight: 600; }
+  .pstat .s { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
+
+  .chartbox { position: relative; margin-bottom: 14px; }
+  .chart-title { font-size: 0.78rem; color: var(--muted); margin-bottom: 4px; }
+  .chart { width: 100%; display: block; cursor: crosshair; }
+  .chart text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+  .chart .grid { stroke: var(--border); stroke-width: 1; }
+  .chart .guide { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart-note { padding: 24px; text-align: center; color: var(--muted); font-size: 0.8rem;
+                background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; }
+
+  .tip { position: absolute; background: var(--panel2); border: 1px solid var(--border);
+         border-radius: 6px; padding: 6px 9px; font-size: 0.75rem; pointer-events: none;
+         white-space: nowrap; transform: translate(-50%, -100%); z-index: 2;
+         box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .tip.hidden { display: none; }
+  .tip .t { color: var(--muted); font-size: 0.68rem; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>▲</span>戦闘力ランキング推移</h1>
+  <div class="header-btns">
+    <button id="btnExport" class="ghost">エクスポート</button>
+    <button id="btnImport" class="ghost">インポート</button>
+    <input type="file" id="fileImport" accept=".json" hidden>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- 入力 -->
+  <div class="panel input-panel">
+    <div class="panel-head">
+      <span>ランキングを貼り付ける</span>
+      <button id="btnToggle" class="ghost">閉じる</button>
+    </div>
+    <div class="input-body" id="inputBody">
+      <p class="hint">
+        ランキング画面をそのままコピーして、下の枠に貼り付け（Ctrl+V）してください。<br>
+        「フレーム」「▼」などの余計な行や、上位3件が 2位→1位→3位 の順に並んでいても、そのままで大丈夫です。<br>
+        <b>取り込んだデータは、お使いのブラウザの中だけに保存されます。</b>どこにも送信されません。
+      </p>
+      <textarea id="raw" placeholder="ここにランキングを貼り付け（Ctrl+V）"></textarea>
+      <div class="input-row">
+        <label>日時 <input type="datetime-local" id="stamp"></label>
+        <button id="btnAdd" class="primary">取り込む</button>
+        <button id="btnClear" class="ghost">クリア</button>
+      </div>
+      <div class="result" id="result"></div>
+    </div>
+  </div>
+
+  <div id="note"></div>
+
+  <!-- 比較 -->
+  <div class="panel controls">
+    <label>比較元 <select id="selA"></select></label>
+    <span class="arrow">→</span>
+    <label>比較先 <select id="selB"></select></label>
+    <button id="btnSwap" class="ghost">入れ替え</button>
+    <label style="margin-left:auto">絞り込み <input type="text" id="q" placeholder="プレイヤー名"></label>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="panel tablewrap">
+    <table>
+      <thead><tr id="head"></tr></thead>
+      <tbody id="body"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">該当するプレイヤーがいません</div>
+  </div>
+
+  <!-- 保存済みデータ -->
+  <div class="panel snaps">
+    <div class="panel-head">
+      <span>保存済みデータ（このブラウザに自動保存されます）</span>
+      <span id="snapCount" style="font-size:0.78rem"></span>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th class="name">日時</th><th>件数</th><th class="name">1位</th><th></th></tr></thead>
+        <tbody id="snapBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- 個人の推移 -->
+<div class="modal hidden" id="modal">
+  <div class="panel">
+    <div class="mhead">
+      <h2 id="mname"></h2>
+      <button class="close" id="mclose">×</button>
+    </div>
+    <div class="mbody">
+      <div class="pstats" id="pstats"></div>
+
+      <div class="chartbox">
+        <div class="chart-title">戦闘力の推移</div>
+        <svg class="chart" id="chartPower" viewBox="0 0 720 200"></svg>
+        <div class="tip hidden" id="tipPower"></div>
+      </div>
+
+      <div class="chartbox">
+        <div class="chart-title">順位の推移</div>
+        <svg class="chart" id="chartRank" viewBox="0 0 720 200"></svg>
+        <div class="tip hidden" id="tipRank"></div>
+      </div>
+
+      <div id="chartNote"></div>
+
+      <div class="tablewrap"><table>
+        <thead><tr><th class="name">日時</th><th>順位</th><th>戦闘力</th><th>変動</th></tr></thead>
+        <tbody id="mbody"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------- 保存
+//
+// 取り込んだデータはこのブラウザの localStorage にだけ置く。
+// このファイルにランキングを埋め込まないこと（公開したときに一緒に配られてしまう）。
+
+const KEY = 'statusUP.snapshots';
+
+function loadSnaps() {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY));
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    return [];
+  }
+}
+function saveSnaps() {
+  S.sort((a, b) => a.stamp.localeCompare(b.stamp));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(S));
+  } catch (e) {
+    alert('保存できませんでした（保存容量の上限かもしれません）。\nエクスポートでバックアップを取ってください。');
+  }
+}
+
+let S = loadSnaps();
+
+// ---------------------------------------------------------------- パーサ
+
+// 貼り付けテキストに混ざる装飾トークン
+const NOISE = new Set(['フレーム', '▼', '▲', '#', 'プレイヤー', '戦闘力', '順位']);
+
+const tokenize = text => text.split(/[\n\r\t]+/).map(s => s.trim()).filter(s => s);
+
+// "1位" / "12" -> 順位
+function parseRank(t) {
+  const body = t.endsWith('位') ? t.slice(0, -1) : t;
+  if (!/^\d{1,4}$/.test(body)) return null;
+  const v = +body;
+  return v >= 1 && v <= 5000 ? v : null;
+}
+// "745,769" / "745769" -> 745769
+function parsePower(t) {
+  if (!/^[\d,]+$/.test(t)) return null;
+  const d = t.replace(/,/g, '');
+  return d ? +d : null;
+}
+
+// 順位 → 名前 → 戦闘力 の順に現れることだけを頼りに読む状態機械。
+// 上位3件が 2位/1位/3位 の順で並ぶレイアウトも、順位を読み取っているのでそのまま扱える。
+function parseRaw(text) {
+  const entries = [], warn = [];
+  let st = 'RANK', cur = null;
+
+  for (const tok of tokenize(text)) {
+    if (NOISE.has(tok)) continue;
+
+    if (st === 'RANK') {
+      const r = parseRank(tok);
+      if (r !== null) { cur = { r, n: '', p: 0 }; st = 'NAME'; }
+      continue;                       // 順位が来るまで読み飛ばす（見出しなど）
+    }
+    if (st === 'NAME') {
+      cur.n = tok; st = 'POWER';
+      continue;
+    }
+    const p = parsePower(tok);        // st === 'POWER'
+    if (p !== null) {
+      cur.p = p; entries.push(cur); st = 'RANK';
+    } else {
+      warn.push(`順位 ${cur.r}（${cur.n}）の戦闘力を読めませんでした: "${tok}"`);
+      st = 'RANK';
+    }
+  }
+  if (st !== 'RANK') warn.push(`末尾のデータが途中で切れています（順位 ${cur.r}）`);
+
+  entries.sort((a, b) => a.r - b.r);
+  return { entries, warn };
+}
+
+// ---------------------------------------------------------------- 表示用
+
+const fmt = n => n.toLocaleString('en-US');
+const sfmt = n => (n > 0 ? '+' : '') + fmt(n);
+const cls = n => n > 0 ? 'up' : n < 0 ? 'down' : 'zero';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// "YYYY-MM-DD HH:MM" -> Date
+function pd(s) {
+  const m = s.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null;
+}
+function hoursBetween(a, b) {
+  const x = pd(a), y = pd(b);
+  return x && y ? (y - x) / 3600000 : 0;
+}
+function nowStamp() {
+  const d = new Date(), z = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
+}
+
+// ---------------------------------------------------------------- 集計
+
+let iA = 0, iB = 0, tab = 'gain', sortKey = 'gain', sortDir = -1, query = '';
+
+// 2 時点を突き合わせて 1 行にまとめる
+function buildRows() {
+  const A = S[iA], B = S[iB], m = new Map();
+  A.entries.forEach(e => m.set(e.n, { n: e.n, inA: true, rA: e.r, pA: e.p }));
+  B.entries.forEach(e => {
+    const r = m.get(e.n) || { n: e.n };
+    r.inB = true; r.rB = e.r; r.pB = e.p; m.set(e.n, r);
+  });
+  const hrs = hoursBetween(A.stamp, B.stamp);
+  return [...m.values()].map(r => {
+    const both = r.inA && r.inB;
+    r.gain = both ? r.pB - r.pA : null;
+    r.rate = both && r.pA > 0 ? (r.pB - r.pA) / r.pA * 100 : null;
+    r.perh = both && hrs > 0 ? r.gain / hrs : null;
+    r.move = both ? r.rA - r.rB : null;     // 正 = 順位が上がった
+    r.cur = r.inB ? r.rB : 100000 + r.rA;   // 圏外は末尾へ
+    return r;
+  });
+}
+
+const TABS = [
+  { id: 'gain', label: '戦力上昇値ランキング', key: 'gain', dir: -1, filter: r => r.inA && r.inB },
+  { id: 'rate', label: '上昇率ランキング',     key: 'rate', dir: -1, filter: r => r.inA && r.inB && r.pA > 0 },
+  { id: 'move', label: 'ランキング遷移',       key: 'move', dir: -1, filter: r => r.inA && r.inB && r.move !== 0 },
+  { id: 'all',  label: '全プレイヤー',         key: 'cur',  dir: 1,  filter: () => true },
+];
+
+const COLS = [
+  { key: 'cur', label: '順位', render: r => r.inB
+      ? `<span class="rk${r.rB <= 3 ? ' top' : ''}">${r.rB}</span>` : '<span class="rk">-</span>' },
+  { key: 'n', label: 'プレイヤー', cls: 'name', render: r => {
+      const tag = !r.inA ? ' <span class="tag new">NEW</span>'
+                : !r.inB ? ' <span class="tag out">圏外</span>' : '';
+      return esc(r.n) + tag; } },
+  { key: 'pA', label: '前回', render: r => r.inA ? fmt(r.pA) : '-' },
+  { key: 'pB', label: '今回', render: r => r.inB ? fmt(r.pB) : '-' },
+  { key: 'gain', label: '上昇値', render: r => r.gain === null ? '-'
+      : `<span class="${cls(r.gain)}">${sfmt(r.gain)}</span>` },
+  { key: 'rate', label: '上昇率', render: r => r.rate === null ? '-'
+      : `<span class="${cls(r.rate)}">${r.rate > 0 ? '+' : ''}${r.rate.toFixed(2)}%</span>` },
+  { key: 'perh', label: '時間あたり', render: r => r.perh === null ? '-'
+      : `<span class="${cls(r.perh)}">${sfmt(Math.round(r.perh))}/h</span>` },
+  { key: 'move', label: '順位変動', render: r => {
+      if (!r.inA) return '<span class="tag new">NEW</span>';
+      if (!r.inB) return '<span class="tag out">圏外</span>';
+      if (r.move === 0) return '<span class="zero">→ 0</span>';
+      return `<span class="${cls(r.move)}">${r.move > 0 ? '↑' : '↓'}${Math.abs(r.move)}</span>`
+           + ` <span class="rk">(${r.rA}→${r.rB})</span>`; } },
+];
+
+function renderCards(rows) {
+  const A = S[iA], B = S[iB];
+  const hrs = hoursBetween(A.stamp, B.stamp);
+  let total = 0, up = 0, down = 0, nw = 0, out = 0, gained = 0;
+  rows.forEach(r => {
+    if (r.inA && r.inB) {
+      total += r.gain;
+      if (r.gain !== 0) gained++;
+      if (r.move > 0) up++; else if (r.move < 0) down++;
+    } else if (r.inB) nw++; else out++;
+  });
+  const cards = [
+    { k: '期間', v: iA === iB ? '—' : (hrs > 0 ? hrs.toFixed(1) + ' 時間' : '—'),
+      s: `${A.stamp} → ${B.stamp}` },
+    { k: '合計上昇', v: `<span class="${cls(total)}">${sfmt(total)}</span>`,
+      s: `上昇したプレイヤー ${gained} 人` },
+    { k: '人数', v: `${A.entries.length} → ${B.entries.length}`, s: `新規 ${nw} / 圏外 ${out}` },
+    { k: '順位変動', v: `<span class="up">↑${up}</span> / <span class="down">↓${down}</span>`, s: '上昇 / 下降' },
+  ];
+  document.getElementById('cards').innerHTML = cards.map(c =>
+    `<div class="card"><div class="k">${c.k}</div><div class="v">${c.v}</div>` +
+    `<div class="s">${esc(c.s)}</div></div>`).join('');
+}
+
+function render() {
+  renderSnaps();
+
+  if (!S.length) {
+    document.getElementById('note').innerHTML =
+      '<div class="note">データがありません。ランキングをコピーして上の枠に貼り付け、「取り込む」を押してください。</div>';
+    document.getElementById('cards').innerHTML = '';
+    document.getElementById('head').innerHTML = '';
+    document.getElementById('body').innerHTML = '';
+    document.getElementById('empty').style.display = 'none';
+    return;
+  }
+  document.getElementById('note').innerHTML = S.length < 2
+    ? '<div class="note">データが 1 件だけです。時間をおいてもう一度ランキングを貼り付けると、変動が見られます。</div>'
+    : '';
+
+  const all = buildRows();
+  renderCards(all);
+
+  const t = TABS.find(x => x.id === tab);
+  let rows = all.filter(t.filter);
+  if (query) {
+    const q = query.toLowerCase();
+    rows = rows.filter(r => r.n.toLowerCase().includes(q));
+  }
+  rows.sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if (x === null || x === undefined) return 1;
+    if (y === null || y === undefined) return -1;
+    return typeof x === 'string' ? x.localeCompare(y, 'ja') * sortDir : (x - y) * sortDir;
+  });
+
+  document.getElementById('head').innerHTML = COLS.map(c =>
+    `<th data-k="${c.key}" class="${c.cls || ''}${sortKey === c.key ? ' sorted' : ''}">` +
+    `${c.label}${sortKey === c.key ? (sortDir < 0 ? ' ▼' : ' ▲') : ''}</th>`).join('');
+
+  document.getElementById('body').innerHTML = rows.map((r, i) =>
+    `<tr data-i="${i}">` + COLS.map(c => `<td class="${c.cls || ''}">${c.render(r)}</td>`).join('') + '</tr>').join('');
+
+  document.getElementById('body').__rows = rows;   // クリック時の参照用
+  document.getElementById('empty').style.display = rows.length ? 'none' : 'block';
+}
+
+function renderSnaps() {
+  document.getElementById('snapCount').textContent = S.length ? `${S.length} 件` : '';
+  document.getElementById('snapBody').innerHTML = S.map((s, i) =>
+    `<tr><td class="name">${esc(s.stamp)}</td><td>${s.entries.length}</td>` +
+    `<td class="name">${s.entries.length ? esc(s.entries[0].n) : '-'}</td>` +
+    `<td><button class="ghost danger" data-del="${i}">削除</button></td></tr>`).join('')
+    || '<tr><td colspan="4" class="empty">まだデータがありません</td></tr>';
+
+  const selA = document.getElementById('selA'), selB = document.getElementById('selB');
+  const opts = S.map((s, i) => `<option value="${i}">${esc(s.stamp)}</option>`).join('');
+  selA.innerHTML = opts; selB.innerHTML = opts;
+  selA.value = iA; selB.value = iB;
+}
+
+// ---------------------------------------------------------------- 個人の推移
+
+// グラフの寸法（viewBox 座標）
+const CH = { W: 720, H: 200, L: 62, R: 14, T: 12, B: 26 };
+
+// 目盛りに使うきりのいい間隔を選ぶ
+function niceStep(span, want) {
+  const raw = span / want;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw) || 0));
+  return [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || mag * 10;
+}
+
+const shortStamp = s => s.slice(5, 16).replace('-', '/');   // "07/17 12:00"
+
+// 時系列の折れ線グラフを描く。pts: [{x, label, v}] (v が null なら圏外)
+// opts: { color, invert(順位用に上下反転), fmtV, fmtTip, area }
+function drawChart(svg, tip, pts, opts) {
+  const vals = pts.filter(p => p.v !== null).map(p => p.v);
+  if (!vals.length) { svg.innerHTML = ''; return; }
+
+  const x0 = pts[0].x, x1 = pts[pts.length - 1].x;
+  const X = v => x1 === x0 ? (CH.L + CH.W - CH.R) / 2
+                           : CH.L + (v - x0) / (x1 - x0) * (CH.W - CH.L - CH.R);
+
+  // Y 軸の範囲。順位はその人の順位帯だけを拡大して見せる（1〜100 位固定だと動きが潰れるため）。
+  // ただし 1 位ぶんの差が画面いっぱいに見えないよう、最低 4 位ぶんの幅は確保する。
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (opts.invert) {
+    const pad = Math.max(1, Math.round((hi - lo) * 0.2));
+    lo = Math.max(1, lo - pad);
+    hi = hi + pad;
+    if (hi - lo < 4) hi = lo + 4;
+  } else if (lo === hi) { lo -= 1; hi += 1; }
+
+  let step = niceStep(hi - lo, 4);
+  if (opts.invert) step = Math.max(1, Math.round(step));   // 順位に小数の目盛りは要らない
+  else { lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step; }
+
+  const ticks = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + step / 1000; v += step)
+    if (!opts.invert || v >= 1) ticks.push(v);
+  if (opts.invert && lo <= 1 && ticks[0] !== 1) ticks.unshift(1);
+
+  const Y = v => {
+    const t = (v - lo) / (hi - lo);
+    return opts.invert ? CH.T + t * (CH.H - CH.T - CH.B)          // 1 位が上
+                       : CH.H - CH.B - t * (CH.H - CH.T - CH.B);
+  };
+
+  let g = '';
+
+  // 横罫線と Y 軸ラベル
+  ticks.forEach(v => {
+    const y = Y(v);
+    g += `<line class="grid" x1="${CH.L}" y1="${y.toFixed(1)}" x2="${CH.W - CH.R}" y2="${y.toFixed(1)}"/>`
+       + `<text x="${CH.L - 8}" y="${(y + 3.5).toFixed(1)}" text-anchor="end">${opts.fmtV(v)}</text>`;
+  });
+
+  // X 軸ラベル（多いときは間引く）
+  const every = Math.max(1, Math.ceil(pts.length / 5));
+  pts.forEach((p, i) => {
+    if (i % every && i !== pts.length - 1) return;
+    const x = X(p.x);
+    const anchor = i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle';
+    g += `<text x="${x.toFixed(1)}" y="${CH.H - 8}" text-anchor="${anchor}">${esc(shortStamp(p.label))}</text>`;
+  });
+
+  // 圏外で途切れるので、連続している区間ごとに線を引く
+  const segs = [];
+  let cur = [];
+  pts.forEach(p => {
+    if (p.v === null) { if (cur.length) segs.push(cur); cur = []; }
+    else cur.push([X(p.x), Y(p.v)]);
+  });
+  if (cur.length) segs.push(cur);
+
+  segs.forEach(seg => {
+    if (opts.area && seg.length > 1) {
+      const base = opts.invert ? CH.T : CH.H - CH.B;
+      g += `<path fill="${opts.color}" fill-opacity="0.12" d="M${seg[0][0].toFixed(1)},${base} `
+         + seg.map(p => `L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
+         + ` L${seg[seg.length - 1][0].toFixed(1)},${base} Z"/>`;
+    }
+    if (seg.length > 1) {
+      g += `<polyline fill="none" stroke="${opts.color}" stroke-width="2" stroke-linejoin="round"
+            points="${seg.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}"/>`;
+    }
+  });
+
+  g += '<g id="guide"></g>';
+  pts.forEach(p => {
+    if (p.v === null) return;
+    g += `<circle cx="${X(p.x).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="3.5"
+          fill="${opts.color}" stroke="#1b1e27" stroke-width="1.5"/>`;
+  });
+  svg.innerHTML = g;
+
+  // ホバーで一番近い点の値を出す
+  const guide = svg.querySelector('#guide');
+  svg.onmousemove = ev => {
+    const box = svg.getBoundingClientRect();
+    const mx = (ev.clientX - box.left) * CH.W / box.width;
+    let best = null, bd = Infinity;
+    pts.forEach(p => {
+      if (p.v === null) return;
+      const d = Math.abs(X(p.x) - mx);
+      if (d < bd) { bd = d; best = p; }
+    });
+    if (!best || bd > 60) { guide.innerHTML = ''; tip.classList.add('hidden'); return; }
+
+    const px = X(best.x), py = Y(best.v);
+    guide.innerHTML = `<line class="guide" x1="${px}" y1="${CH.T}" x2="${px}" y2="${CH.H - CH.B}"/>`
+                    + `<circle cx="${px}" cy="${py}" r="6" fill="${opts.color}" fill-opacity="0.25"/>`;
+    tip.innerHTML = `<div class="t">${esc(best.label)}</div>${opts.fmtTip(best)}`;
+    tip.style.left = (px * box.width / CH.W) + 'px';
+    tip.style.top = (py * box.height / CH.H - 10) + 'px';
+    tip.classList.remove('hidden');
+  };
+  svg.onmouseleave = () => { guide.innerHTML = ''; tip.classList.add('hidden'); };
+}
+
+function showPlayer(name) {
+  const hist = S.map((s, i) => {
+    const e = s.entries.find(e => e.n === name);
+    const d = pd(s.stamp);
+    return { stamp: s.stamp, e, x: d ? d.getTime() : i };   // 日時が読めなければ等間隔
+  });
+  const seen = hist.filter(h => h.e);
+  const first = seen[0], last = seen[seen.length - 1];
+  const best = seen.reduce((a, h) => h.e.r < a.e.r ? h : a, seen[0]);
+  const gain = last.e.p - first.e.p;
+  const hrs = hoursBetween(first.stamp, last.stamp);
+
+  document.getElementById('mname').innerHTML =
+    esc(name) + `<span class="sub">${seen.length} 件のデータ</span>`;
+
+  // サマリー
+  const cards = [
+    { k: '現在の順位', v: last.e === hist[hist.length - 1].e
+        ? `<span class="rk${last.e.r <= 3 ? ' top' : ''}">${last.e.r}</span> 位`
+        : '<span class="zero">圏外</span>',
+      s: `最高 ${best.e.r} 位` },
+    { k: '現在の戦闘力', v: fmt(last.e.p), s: last.stamp.slice(5, 16) },
+    { k: '合計上昇', v: `<span class="${cls(gain)}">${sfmt(gain)}</span>`,
+      s: first.e.p > 0 ? `${gain >= 0 ? '+' : ''}${(gain / first.e.p * 100).toFixed(1)}%` : '' },
+    { k: '平均上昇', v: hrs > 0 ? `<span class="${cls(gain)}">${sfmt(Math.round(gain / hrs))}</span>` : '—',
+      s: hrs > 0 ? `1 時間あたり（${hrs.toFixed(1)} 時間）` : '期間なし' },
+  ];
+  document.getElementById('pstats').innerHTML = cards.map(c =>
+    `<div class="pstat"><div class="k">${c.k}</div><div class="v">${c.v}</div>` +
+    `<div class="s">${esc(c.s)}</div></div>`).join('');
+
+  // グラフ
+  const note = document.getElementById('chartNote');
+  const boxes = document.querySelectorAll('.chartbox');
+  if (seen.length < 2) {
+    boxes.forEach(b => b.style.display = 'none');
+    note.innerHTML = '<div class="chart-note">グラフはデータが 2 件以上になると表示されます。</div>';
+  } else {
+    boxes.forEach(b => b.style.display = 'block');
+    note.innerHTML = '';
+    drawChart(document.getElementById('chartPower'), document.getElementById('tipPower'),
+      hist.map(h => ({ x: h.x, label: h.stamp, v: h.e ? h.e.p : null, e: h.e })),
+      { color: '#4f8cff', area: true, fmtV: v => fmt(Math.round(v)),
+        fmtTip: p => `<b>${fmt(p.v)}</b>` });
+
+    drawChart(document.getElementById('chartRank'), document.getElementById('tipRank'),
+      hist.map(h => ({ x: h.x, label: h.stamp, v: h.e ? h.e.r : null, e: h.e })),
+      { color: '#e8b84b', invert: true, fmtV: v => Math.round(v) + '位',
+        fmtTip: p => `<b>${p.v} 位</b>` });
+  }
+
+  // 履歴
+  let prev = null;
+  document.getElementById('mbody').innerHTML = hist.map(h => {
+    if (!h.e) { prev = null; return `<tr><td class="name">${esc(h.stamp)}</td><td colspan="3" class="zero">圏外</td></tr>`; }
+    const d = prev === null ? null : h.e.p - prev;
+    prev = h.e.p;
+    return `<tr><td class="name">${esc(h.stamp)}</td><td class="rk">${h.e.r}</td><td>${fmt(h.e.p)}</td>` +
+           `<td>${d === null ? '-' : `<span class="${cls(d)}">${sfmt(d)}</span>`}</td></tr>`;
+  }).join('');
+
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+// ---------------------------------------------------------------- 取り込み
+
+function setResult(html, ok) {
+  const el = document.getElementById('result');
+  el.className = 'result ' + (ok ? 'ok' : 'ng');
+  el.innerHTML = html;
+}
+
+function doImport() {
+  const text = document.getElementById('raw').value;
+  if (!text.trim()) { setResult('貼り付けが空です。', false); return; }
+
+  const { entries, warn } = parseRaw(text);
+  if (!entries.length) {
+    setResult('1 件も読み取れませんでした。ランキング画面をそのままコピーできているか確認してください。', false);
+    return;
+  }
+
+  const v = document.getElementById('stamp').value;   // "YYYY-MM-DDTHH:MM"
+  const stamp = v ? v.replace('T', ' ').slice(0, 16) : nowStamp();
+
+  const at = S.findIndex(s => s.stamp === stamp);
+  if (at >= 0 && !confirm(`${stamp} のデータは既にあります。上書きしますか？`)) return;
+  if (at >= 0) S[at] = { stamp, entries }; else S.push({ stamp, entries });
+
+  saveSnaps();
+  iB = S.findIndex(s => s.stamp === stamp);
+  iA = S.length >= 2 ? Math.max(0, iB - 1) : iB;
+
+  const top = entries[0], last = entries[entries.length - 1];
+  setResult(`<b>${stamp}</b> として ${entries.length} 件を取り込みました。` +
+    `（1位 ${esc(top.n)} ${fmt(top.p)} / 最下位 ${esc(last.n)} ${fmt(last.p)}）` +
+    (warn.length ? '<ul>' + warn.map(w => `<li>${esc(w)}</li>`).join('') + '</ul>' : ''), true);
+
+  document.getElementById('raw').value = '';
+  render();
+  if (S.length >= 2) document.getElementById('cards').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ---------------------------------------------------------------- 入出力
+
+function doExport() {
+  const blob = new Blob([JSON.stringify({ snapshots: S }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `statusUP_${nowStamp().replace(/[- :]/g, '')}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function doImportFile(file) {
+  const fr = new FileReader();
+  fr.onload = () => {
+    try {
+      const v = JSON.parse(fr.result);
+      const list = Array.isArray(v) ? v : v.snapshots;
+      if (!Array.isArray(list)) throw new Error('形式が違います');
+
+      let add = 0, upd = 0;
+      list.forEach(s => {
+        if (!s || !s.stamp || !Array.isArray(s.entries)) return;
+        const at = S.findIndex(x => x.stamp === s.stamp);
+        if (at >= 0) { S[at] = s; upd++; } else { S.push(s); add++; }
+      });
+      saveSnaps();
+      iB = S.length - 1; iA = Math.max(0, S.length - 2);
+      render();
+      setResult(`インポートしました。（新規 ${add} 件 / 上書き ${upd} 件）`, true);
+    } catch (e) {
+      setResult('インポートできませんでした: ' + esc(e.message), false);
+    }
+  };
+  fr.readAsText(file);
+}
+
+// ---------------------------------------------------------------- 初期化
+
+document.getElementById('stamp').value = nowStamp().replace(' ', 'T');
+
+document.getElementById('btnAdd').onclick = doImport;
+document.getElementById('btnClear').onclick = () => {
+  document.getElementById('raw').value = '';
+  document.getElementById('result').className = 'result';
+};
+document.getElementById('btnToggle').onclick = e => {
+  const b = document.getElementById('inputBody');
+  const open = b.style.display !== 'none';
+  b.style.display = open ? 'none' : 'block';
+  e.target.textContent = open ? '開く' : '閉じる';
+};
+document.getElementById('btnExport').onclick = doExport;
+document.getElementById('btnImport').onclick = () => document.getElementById('fileImport').click();
+document.getElementById('fileImport').onchange = e => {
+  if (e.target.files[0]) doImportFile(e.target.files[0]);
+  e.target.value = '';
+};
+
+document.getElementById('selA').onchange = e => { iA = +e.target.value; render(); };
+document.getElementById('selB').onchange = e => { iB = +e.target.value; render(); };
+document.getElementById('btnSwap').onclick = () => { [iA, iB] = [iB, iA]; render(); };
+document.getElementById('q').oninput = e => { query = e.target.value.trim(); render(); };
+
+document.getElementById('tabs').innerHTML = TABS.map(t =>
+  `<div class="tab${t.id === tab ? ' on' : ''}" data-id="${t.id}">${t.label}</div>`).join('');
+document.getElementById('tabs').onclick = e => {
+  const el = e.target.closest('.tab');
+  if (!el) return;
+  const t = TABS.find(x => x.id === el.dataset.id);
+  tab = t.id; sortKey = t.key; sortDir = t.dir;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.id === tab));
+  render();
+};
+document.getElementById('head').onclick = e => {
+  const th = e.target.closest('th');
+  if (!th) return;
+  const k = th.dataset.k;
+  if (sortKey === k) sortDir = -sortDir;
+  else { sortKey = k; sortDir = (k === 'n' || k === 'cur') ? 1 : -1; }
+  render();
+};
+document.getElementById('body').onclick = e => {
+  const tr = e.target.closest('tr');
+  if (!tr) return;
+  const rows = document.getElementById('body').__rows;
+  const r = rows && rows[+tr.dataset.i];
+  if (r) showPlayer(r.n);
+};
+document.getElementById('snapBody').onclick = e => {
+  const i = e.target.dataset?.del;
+  if (i === undefined) return;
+  if (!confirm(`${S[+i].stamp} のデータを削除しますか？`)) return;
+  S.splice(+i, 1);
+  saveSnaps();
+  iB = Math.max(0, S.length - 1); iA = Math.max(0, S.length - 2);
+  render();
+};
+
+const modal = document.getElementById('modal');
+document.getElementById('mclose').onclick = () => modal.classList.add('hidden');
+modal.onclick = e => { if (e.target === modal) modal.classList.add('hidden'); };
+document.onkeydown = e => { if (e.key === 'Escape') modal.classList.add('hidden'); };
+
+// 貼り付けたら日時を今にしておく（貼り付け直後に取り込むことが多いため）
+document.getElementById('raw').addEventListener('paste', () => {
+  setTimeout(() => { document.getElementById('stamp').value = nowStamp().replace(' ', 'T'); }, 0);
+});
+
+iB = Math.max(0, S.length - 1);
+iA = Math.max(0, S.length - 2);
+render();
+</script>
+</body>
+</html>
