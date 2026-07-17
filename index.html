@@ -246,13 +246,12 @@
         <h3>書き出す</h3>
         <p class="desc">
           このブラウザのデータを 1 つのファイルにまとめます。<br>
-          スマホへ渡すなら「共有」から LINE やクラウドに送るのが早いです。PC 同士なら、
-          ダウンロードしたファイルをクラウドドライブや USB で移してください。
+          ダウンロードしたファイルをクラウドドライブや USB で移すか、
+          コピーして自分宛のチャットなどに貼り付けてください。
         </p>
         <div class="hf-now" id="hfNow"></div>
         <div class="hf-btns">
           <button id="btnDownload" class="primary">ダウンロード</button>
-          <button id="btnShare" hidden>共有</button>
           <button id="btnCopy">クリップボードにコピー</button>
         </div>
       </div>
@@ -794,15 +793,6 @@ function doDownload() {
   setHfResult(`<b>${exportName()}</b> をダウンロードしました。`, true);
 }
 
-async function doShare() {
-  const file = new File([exportJson()], exportName(), { type: 'application/json' });
-  try {
-    await navigator.share({ files: [file], title: 'statusUP のデータ' });
-  } catch (e) {
-    if (e.name !== 'AbortError') setHfResult('共有できませんでした: ' + esc(e.message), false);
-  }
-}
-
 async function doCopy() {
   const text = exportJson();
   try {
@@ -933,7 +923,6 @@ function renderHandoff() {
   const none = S.length === 0;
   document.getElementById('btnDownload').disabled = none;
   document.getElementById('btnCopy').disabled = none;
-  document.getElementById('btnShare').disabled = none;
 }
 
 // ---------------------------------------------------------------- 初期化
@@ -964,13 +953,6 @@ hmodal.onclick = e => { if (e.target === hmodal) hmodal.classList.add('hidden');
 
 document.getElementById('btnDownload').onclick = doDownload;
 document.getElementById('btnCopy').onclick = doCopy;
-
-// 共有はスマホなど対応環境でのみ出す
-if (navigator.canShare && navigator.canShare({ files: [new File([''], 'a.json', { type: 'application/json' })] })) {
-  const b = document.getElementById('btnShare');
-  b.hidden = false;
-  b.onclick = doShare;
-}
 
 const drop = document.getElementById('drop');
 drop.onclick = () => document.getElementById('fileImport').click();
