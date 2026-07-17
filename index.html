@@ -144,9 +144,6 @@
           color: var(--muted); font-size: 0.82rem; cursor: pointer; transition: 0.15s; }
   .drop:hover, .drop.over { border-color: var(--accent); color: var(--text); background: var(--panel2); }
   .drop b { color: var(--accent); }
-  .hf-or { text-align: center; color: var(--muted); font-size: 0.72rem; margin: 8px 0; }
-  #pasteJson { width: 100%; min-height: 60px; resize: vertical;
-               font-family: Consolas, monospace; font-size: 0.72rem; }
 
   .preview { margin-top: 10px; border: 1px solid var(--accent); border-radius: 8px; overflow: hidden; }
   .preview .ph { background: rgba(79,140,255,0.12); padding: 8px 12px; font-size: 0.8rem; }
@@ -246,13 +243,11 @@
         <h3>書き出す</h3>
         <p class="desc">
           このブラウザのデータを 1 つのファイルにまとめます。<br>
-          ダウンロードしたファイルをクラウドドライブや USB で移すか、
-          コピーして自分宛のチャットなどに貼り付けてください。
+          ダウンロードしたファイルを、クラウドドライブや USB で渡したい端末へ移してください。
         </p>
         <div class="hf-now" id="hfNow"></div>
         <div class="hf-btns">
           <button id="btnDownload" class="primary">ダウンロード</button>
-          <button id="btnCopy">クリップボードにコピー</button>
         </div>
       </div>
 
@@ -264,11 +259,6 @@
         </p>
         <div class="drop" id="drop">
           <b>ファイルを選ぶ</b> か、ここにドラッグ＆ドロップ
-        </div>
-        <div class="hf-or">― または JSON を直接貼り付け ―</div>
-        <textarea id="pasteJson" placeholder='{"snapshots":[ ... ]}'></textarea>
-        <div class="hf-btns" style="margin-top:8px">
-          <button id="btnPaste">貼り付けた内容を読み込む</button>
         </div>
         <div id="preview"></div>
       </div>
@@ -793,25 +783,6 @@ function doDownload() {
   setHfResult(`<b>${exportName()}</b> をダウンロードしました。`, true);
 }
 
-async function doCopy() {
-  const text = exportJson();
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (e) {
-    // クリップボード API が使えない環境向けの保険
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand('copy');
-    ta.remove();
-    if (!ok) { setHfResult('コピーできませんでした。ダウンロードを使ってください。', false); return; }
-  }
-  setHfResult(`データ（${S.length} 件）をクリップボードにコピーしました。`, true);
-}
-
 // 他の端末から来たファイルを信用せず、形を検証したうえで必要な項目だけ取り出す
 function validate(v) {
   const list = Array.isArray(v) ? v : (v && v.snapshots);
@@ -882,7 +853,6 @@ function commitImport() {
   iA = Math.max(0, S.length - 2);
   render();
   clearPreview();
-  document.getElementById('pasteJson').value = '';
   renderHandoff();
   setHfResult(`読み込みました。（追加 ${add} 件 / 上書き ${upd} 件）保存済みは ${S.length} 件です。`, true);
 }
@@ -920,9 +890,7 @@ function renderHandoff() {
       `<div class="sub">${esc(stamps[0])} 〜 ${esc(stamps[stamps.length - 1])}</div>`
     : '<b>データがありません</b><div class="sub">先にランキングを取り込んでください</div>';
 
-  const none = S.length === 0;
-  document.getElementById('btnDownload').disabled = none;
-  document.getElementById('btnCopy').disabled = none;
+  document.getElementById('btnDownload').disabled = S.length === 0;
 }
 
 // ---------------------------------------------------------------- 初期化
@@ -952,7 +920,6 @@ document.getElementById('hclose').onclick = () => hmodal.classList.add('hidden')
 hmodal.onclick = e => { if (e.target === hmodal) hmodal.classList.add('hidden'); };
 
 document.getElementById('btnDownload').onclick = doDownload;
-document.getElementById('btnCopy').onclick = doCopy;
 
 const drop = document.getElementById('drop');
 drop.onclick = () => document.getElementById('fileImport').click();
@@ -970,11 +937,6 @@ drop.addEventListener('drop', e => {
   const f = e.dataTransfer.files[0];
   if (f) doImportFile(f);
 });
-document.getElementById('btnPaste').onclick = () => {
-  const t = document.getElementById('pasteJson').value.trim();
-  if (!t) { setHfResult('貼り付けが空です。', false); return; }
-  readText(t, '貼り付けた内容');
-};
 
 document.getElementById('selA').onchange = e => { iA = +e.target.value; render(); };
 document.getElementById('selB').onchange = e => { iB = +e.target.value; render(); };
