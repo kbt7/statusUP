@@ -129,6 +129,32 @@
   .chart-note { padding: 24px; text-align: center; color: var(--muted); font-size: 0.8rem;
                 background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; }
 
+  /* データの受け渡し */
+  .hf-sec { margin-bottom: 18px; }
+  .hf-sec:last-child { margin-bottom: 0; }
+  .hf-sec h3 { font-size: 0.85rem; margin-bottom: 4px; }
+  .hf-sec .desc { font-size: 0.78rem; color: var(--muted); line-height: 1.6; margin-bottom: 10px; }
+  .hf-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hf-now { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+            padding: 10px 12px; margin-bottom: 10px; font-size: 0.8rem; }
+  .hf-now b { font-size: 1.05rem; }
+  .hf-now .sub { color: var(--muted); font-size: 0.75rem; margin-top: 3px; }
+
+  .drop { border: 1px dashed var(--border); border-radius: 8px; padding: 22px 14px; text-align: center;
+          color: var(--muted); font-size: 0.82rem; cursor: pointer; transition: 0.15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); color: var(--text); background: var(--panel2); }
+  .drop b { color: var(--accent); }
+  .hf-or { text-align: center; color: var(--muted); font-size: 0.72rem; margin: 8px 0; }
+  #pasteJson { width: 100%; min-height: 60px; resize: vertical;
+               font-family: Consolas, monospace; font-size: 0.72rem; }
+
+  .preview { margin-top: 10px; border: 1px solid var(--accent); border-radius: 8px; overflow: hidden; }
+  .preview .ph { background: rgba(79,140,255,0.12); padding: 8px 12px; font-size: 0.8rem; }
+  .preview .pb { padding: 10px 12px; font-size: 0.78rem; color: var(--muted); line-height: 1.7; }
+  .preview .pb .add { color: var(--up); }
+  .preview .pb .upd { color: var(--gold); }
+  .preview .pf { padding: 10px 12px; display: flex; gap: 8px; border-top: 1px solid var(--border); }
+
   .tip { position: absolute; background: var(--panel2); border: 1px solid var(--border);
          border-radius: 6px; padding: 6px 9px; font-size: 0.75rem; pointer-events: none;
          white-space: nowrap; transform: translate(-50%, -100%); z-index: 2;
@@ -142,9 +168,8 @@
 <header>
   <h1><span>▲</span>戦闘力ランキング推移</h1>
   <div class="header-btns">
-    <button id="btnExport" class="ghost">エクスポート</button>
-    <button id="btnImport" class="ghost">インポート</button>
-    <input type="file" id="fileImport" accept=".json" hidden>
+    <button id="btnHandoff" class="ghost">データの受け渡し</button>
+    <input type="file" id="fileImport" accept=".json,application/json" hidden>
   </div>
 </header>
 
@@ -209,6 +234,49 @@
     </div>
   </div>
 
+</div>
+
+<!-- データの受け渡し -->
+<div class="modal hidden" id="hmodal">
+  <div class="panel" style="max-width: 560px">
+    <div class="mhead"><h2>データの受け渡し</h2><button class="close" id="hclose">×</button></div>
+    <div class="mbody">
+
+      <div class="hf-sec">
+        <h3>書き出す</h3>
+        <p class="desc">
+          このブラウザのデータを 1 つのファイルにまとめます。<br>
+          スマホへ渡すなら「共有」から LINE やクラウドに送るのが早いです。PC 同士なら、
+          ダウンロードしたファイルをクラウドドライブや USB で移してください。
+        </p>
+        <div class="hf-now" id="hfNow"></div>
+        <div class="hf-btns">
+          <button id="btnDownload" class="primary">ダウンロード</button>
+          <button id="btnShare" hidden>共有</button>
+          <button id="btnCopy">クリップボードにコピー</button>
+        </div>
+      </div>
+
+      <div class="hf-sec">
+        <h3>読み込む</h3>
+        <p class="desc">
+          受け取ったファイルを読み込みます。今あるデータは消えません。<br>
+          同じ日時のものだけ新しい内容で上書きし、それ以外は追加します。
+        </p>
+        <div class="drop" id="drop">
+          <b>ファイルを選ぶ</b> か、ここにドラッグ＆ドロップ
+        </div>
+        <div class="hf-or">― または JSON を直接貼り付け ―</div>
+        <textarea id="pasteJson" placeholder='{"snapshots":[ ... ]}'></textarea>
+        <div class="hf-btns" style="margin-top:8px">
+          <button id="btnPaste">貼り付けた内容を読み込む</button>
+        </div>
+        <div id="preview"></div>
+      </div>
+
+      <div class="result" id="hfResult"></div>
+    </div>
+  </div>
 </div>
 
 <!-- 個人の推移 -->
@@ -707,38 +775,165 @@ function doImport() {
 
 // ---------------------------------------------------------------- 入出力
 
-function doExport() {
-  const blob = new Blob([JSON.stringify({ snapshots: S }, null, 1)], { type: 'application/json' });
+const exportName = () => `statusUP_${nowStamp().replace(/[- :]/g, '').slice(0, 13)}.json`;
+const exportJson = () => JSON.stringify({ app: 'statusUP', version: 1, snapshots: S }, null, 1);
+
+function setHfResult(html, ok) {
+  const el = document.getElementById('hfResult');
+  el.className = 'result ' + (ok ? 'ok' : 'ng');
+  el.innerHTML = html;
+}
+
+function doDownload() {
+  const blob = new Blob([exportJson()], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `statusUP_${nowStamp().replace(/[- :]/g, '')}.json`;
+  a.download = exportName();
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  setHfResult(`<b>${exportName()}</b> をダウンロードしました。`, true);
+}
+
+async function doShare() {
+  const file = new File([exportJson()], exportName(), { type: 'application/json' });
+  try {
+    await navigator.share({ files: [file], title: 'statusUP のデータ' });
+  } catch (e) {
+    if (e.name !== 'AbortError') setHfResult('共有できませんでした: ' + esc(e.message), false);
+  }
+}
+
+async function doCopy() {
+  const text = exportJson();
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    // クリップボード API が使えない環境向けの保険
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (!ok) { setHfResult('コピーできませんでした。ダウンロードを使ってください。', false); return; }
+  }
+  setHfResult(`データ（${S.length} 件）をクリップボードにコピーしました。`, true);
+}
+
+// 他の端末から来たファイルを信用せず、形を検証したうえで必要な項目だけ取り出す
+function validate(v) {
+  const list = Array.isArray(v) ? v : (v && v.snapshots);
+  if (!Array.isArray(list)) throw new Error('statusUP のデータではないようです');
+  if (!list.length) throw new Error('データが 1 件も入っていません');
+
+  return list.map((s, i) => {
+    const where = `${i + 1} 件目`;
+    if (!s || typeof s.stamp !== 'string' || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s.stamp))
+      throw new Error(`${where}: 日時の形式が違います`);
+    if (!Array.isArray(s.entries) || !s.entries.length)
+      throw new Error(`${where}（${s.stamp}）: プレイヤーが入っていません`);
+
+    const entries = s.entries.map(e => {
+      if (!e || typeof e.n !== 'string' || !e.n)
+        throw new Error(`${where}（${s.stamp}）: プレイヤー名がありません`);
+      if (!Number.isFinite(+e.r) || !Number.isFinite(+e.p))
+        throw new Error(`${where}（${s.stamp}）: ${e.n} の順位か戦闘力が数値ではありません`);
+      return { r: +e.r, n: e.n, p: +e.p };   // 余計な項目は捨てる
+    }).sort((a, b) => a.r - b.r);
+
+    return { stamp: s.stamp, entries };
+  });
+}
+
+// 読み込み前に、何がどう変わるかを見せて確認をとる
+let pending = null;
+
+function showPreview(list, from) {
+  pending = list;
+  const add = list.filter(s => !S.some(x => x.stamp === s.stamp));
+  const upd = list.filter(s => S.some(x => x.stamp === s.stamp));
+  const stamps = list.map(s => s.stamp).sort();
+
+  document.getElementById('preview').innerHTML = `
+    <div class="preview">
+      <div class="ph"><b>${esc(from)}</b> の内容</div>
+      <div class="pb">
+        ${list.length} 件（${esc(stamps[0])} 〜 ${esc(stamps[stamps.length - 1])}）<br>
+        <span class="add">追加 ${add.length} 件</span>
+        ${upd.length ? ` / <span class="upd">上書き ${upd.length} 件</span>` : ''}
+        ${upd.length ? `<br><span class="upd">上書き: ${upd.map(s => esc(s.stamp)).join('、')}</span>` : ''}
+        <br>取り込むと、保存済みは ${S.length} 件 → ${S.length + add.length} 件になります。
+      </div>
+      <div class="pf">
+        <button class="primary" id="btnCommit">この内容を取り込む</button>
+        <button class="ghost" id="btnCancel">やめる</button>
+      </div>
+    </div>`;
+
+  document.getElementById('btnCommit').onclick = commitImport;
+  document.getElementById('btnCancel').onclick = clearPreview;
+}
+
+function clearPreview() {
+  pending = null;
+  document.getElementById('preview').innerHTML = '';
+}
+
+function commitImport() {
+  let add = 0, upd = 0;
+  pending.forEach(s => {
+    const at = S.findIndex(x => x.stamp === s.stamp);
+    if (at >= 0) { S[at] = s; upd++; } else { S.push(s); add++; }
+  });
+  saveSnaps();
+  iB = Math.max(0, S.length - 1);
+  iA = Math.max(0, S.length - 2);
+  render();
+  clearPreview();
+  document.getElementById('pasteJson').value = '';
+  renderHandoff();
+  setHfResult(`読み込みました。（追加 ${add} 件 / 上書き ${upd} 件）保存済みは ${S.length} 件です。`, true);
+}
+
+function readText(text, from) {
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch (e) {
+    clearPreview();
+    setHfResult('読み込めませんでした: ファイルが壊れているか、statusUP が書き出したものではありません。', false);
+    return;
+  }
+  try {
+    showPreview(validate(v), from);
+    setHfResult('内容を確認して「この内容を取り込む」を押してください。', true);
+  } catch (e) {
+    clearPreview();
+    setHfResult('読み込めませんでした: ' + esc(e.message), false);
+  }
 }
 
 function doImportFile(file) {
   const fr = new FileReader();
-  fr.onload = () => {
-    try {
-      const v = JSON.parse(fr.result);
-      const list = Array.isArray(v) ? v : v.snapshots;
-      if (!Array.isArray(list)) throw new Error('形式が違います');
-
-      let add = 0, upd = 0;
-      list.forEach(s => {
-        if (!s || !s.stamp || !Array.isArray(s.entries)) return;
-        const at = S.findIndex(x => x.stamp === s.stamp);
-        if (at >= 0) { S[at] = s; upd++; } else { S.push(s); add++; }
-      });
-      saveSnaps();
-      iB = S.length - 1; iA = Math.max(0, S.length - 2);
-      render();
-      setResult(`インポートしました。（新規 ${add} 件 / 上書き ${upd} 件）`, true);
-    } catch (e) {
-      setResult('インポートできませんでした: ' + esc(e.message), false);
-    }
-  };
+  fr.onload = () => readText(fr.result, file.name);
+  fr.onerror = () => setHfResult('ファイルを読めませんでした。', false);
   fr.readAsText(file);
+}
+
+function renderHandoff() {
+  const size = new Blob([exportJson()]).size;
+  const stamps = S.map(s => s.stamp).sort();
+  document.getElementById('hfNow').innerHTML = S.length
+    ? `<b>${S.length} 件</b> のデータ（約 ${(size / 1024).toFixed(1)} KB）` +
+      `<div class="sub">${esc(stamps[0])} 〜 ${esc(stamps[stamps.length - 1])}</div>`
+    : '<b>データがありません</b><div class="sub">先にランキングを取り込んでください</div>';
+
+  const none = S.length === 0;
+  document.getElementById('btnDownload').disabled = none;
+  document.getElementById('btnCopy').disabled = none;
+  document.getElementById('btnShare').disabled = none;
 }
 
 // ---------------------------------------------------------------- 初期化
@@ -756,11 +951,47 @@ document.getElementById('btnToggle').onclick = e => {
   b.style.display = open ? 'none' : 'block';
   e.target.textContent = open ? '開く' : '閉じる';
 };
-document.getElementById('btnExport').onclick = doExport;
-document.getElementById('btnImport').onclick = () => document.getElementById('fileImport').click();
+// --- データの受け渡し ---
+const hmodal = document.getElementById('hmodal');
+document.getElementById('btnHandoff').onclick = () => {
+  clearPreview();
+  document.getElementById('hfResult').className = 'result';
+  renderHandoff();
+  hmodal.classList.remove('hidden');
+};
+document.getElementById('hclose').onclick = () => hmodal.classList.add('hidden');
+hmodal.onclick = e => { if (e.target === hmodal) hmodal.classList.add('hidden'); };
+
+document.getElementById('btnDownload').onclick = doDownload;
+document.getElementById('btnCopy').onclick = doCopy;
+
+// 共有はスマホなど対応環境でのみ出す
+if (navigator.canShare && navigator.canShare({ files: [new File([''], 'a.json', { type: 'application/json' })] })) {
+  const b = document.getElementById('btnShare');
+  b.hidden = false;
+  b.onclick = doShare;
+}
+
+const drop = document.getElementById('drop');
+drop.onclick = () => document.getElementById('fileImport').click();
 document.getElementById('fileImport').onchange = e => {
   if (e.target.files[0]) doImportFile(e.target.files[0]);
   e.target.value = '';
+};
+['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => {
+  e.preventDefault(); drop.classList.add('over');
+}));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => {
+  e.preventDefault(); drop.classList.remove('over');
+}));
+drop.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) doImportFile(f);
+});
+document.getElementById('btnPaste').onclick = () => {
+  const t = document.getElementById('pasteJson').value.trim();
+  if (!t) { setHfResult('貼り付けが空です。', false); return; }
+  readText(t, '貼り付けた内容');
 };
 
 document.getElementById('selA').onchange = e => { iA = +e.target.value; render(); };
@@ -806,7 +1037,11 @@ document.getElementById('snapBody').onclick = e => {
 const modal = document.getElementById('modal');
 document.getElementById('mclose').onclick = () => modal.classList.add('hidden');
 modal.onclick = e => { if (e.target === modal) modal.classList.add('hidden'); };
-document.onkeydown = e => { if (e.key === 'Escape') modal.classList.add('hidden'); };
+document.onkeydown = e => {
+  if (e.key !== 'Escape') return;
+  modal.classList.add('hidden');
+  hmodal.classList.add('hidden');
+};
 
 // 貼り付けたら日時を今にしておく（貼り付け直後に取り込むことが多いため）
 document.getElementById('raw').addEventListener('paste', () => {
