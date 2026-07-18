@@ -407,7 +407,12 @@ function nowStamp() {
 
 let iA = 0, iB = 0, tab = 'gain', sortKey = 'gain', sortDir = -1, query = '';
 
-// 2 時点を突き合わせて 1 行にまとめる
+// そのスナップショットに載っている最下位。圏外の人は「これより下」としか分からない
+const cutoff = s => (s.entries && s.entries[s.entries.length - 1]) || null;
+
+// 2 時点を突き合わせて 1 行にまとめる。
+// 圏外（ランキングに載っていない）の人は戦闘力そのものが取得できないので、
+// 上昇値・上昇率・順位変動は計算せず null のままにする。推測して埋めない。
 function buildRows() {
   const A = S[iA], B = S[iB], m = new Map();
   A.entries.forEach(e => m.set(e.n, { n: e.n, inA: true, rA: e.r, pA: e.p }));
@@ -416,6 +421,8 @@ function buildRows() {
     r.inB = true; r.rB = e.r; r.pB = e.p; m.set(e.n, r);
   });
   const hrs = hoursBetween(A.stamp, B.stamp);
+  const cutA = cutoff(A), cutB = cutoff(B);
+
   return [...m.values()].map(r => {
     const both = r.inA && r.inB;
     r.gain = both ? r.pB - r.pA : null;
@@ -423,6 +430,7 @@ function buildRows() {
     r.perh = both && hrs > 0 ? r.gain / hrs : null;
     r.move = both ? r.rA - r.rB : null;     // 正 = 順位が上がった
     r.cur = r.inB ? r.rB : 100000 + r.rA;   // 圏外は末尾へ
+    r.cutA = cutA; r.cutB = cutB;           // 圏外のときに「◯◯未満」と示すため
     return r;
   });
 }
@@ -430,28 +438,40 @@ function buildRows() {
 const TABS = [
   { id: 'gain', label: '戦力上昇値ランキング', key: 'gain', dir: -1, filter: r => r.inA && r.inB },
   { id: 'rate', label: '上昇率ランキング',     key: 'rate', dir: -1, filter: r => r.inA && r.inB && r.pA > 0 },
-  { id: 'move', label: 'ランキング遷移',       key: 'move', dir: -1, filter: r => r.inA && r.inB && r.move !== 0 },
+  // 圏外に落ちた人・新しく入った人も「順位の動き」なので含める
+  { id: 'move', label: 'ランキング遷移',       key: 'move', dir: -1,
+    filter: r => !r.inA || !r.inB || r.move !== 0 },
   { id: 'all',  label: '全プレイヤー',         key: 'cur',  dir: 1,  filter: () => true },
 ];
 
+// 圏外だと戦闘力そのものが分からない。分かるのは「最下位より下」ということだけなので、
+// 数値を作らずに境界を示す。
+const outCell = cut => cut
+  ? `<span class="zero" title="ランキング外のため不明。${cut.r}位（${fmt(cut.p)}）より下">`
+    + `${fmt(cut.p)} 未満</span>`
+  : '<span class="zero">不明</span>';
+
+const unknown = why => `<span class="zero" title="${esc(why)}">—</span>`;
+const OUT_WHY = '圏外の時点があるため計算できません';
+
 const COLS = [
   { key: 'cur', label: '順位', render: r => r.inB
-      ? `<span class="rk${r.rB <= 3 ? ' top' : ''}">${r.rB}</span>` : '<span class="rk">-</span>' },
+      ? `<span class="rk${r.rB <= 3 ? ' top' : ''}">${r.rB}</span>`
+      : '<span class="tag out">圏外</span>' },
   { key: 'n', label: 'プレイヤー', cls: 'name', render: r => {
-      const tag = !r.inA ? ' <span class="tag new">NEW</span>'
-                : !r.inB ? ' <span class="tag out">圏外</span>' : '';
+      const tag = !r.inA ? ' <span class="tag new">NEW</span>' : '';
       return esc(r.n) + tag; } },
-  { key: 'pA', label: '前回', render: r => r.inA ? fmt(r.pA) : '-' },
-  { key: 'pB', label: '今回', render: r => r.inB ? fmt(r.pB) : '-' },
-  { key: 'gain', label: '上昇値', render: r => r.gain === null ? '-'
+  { key: 'pA', label: '前回', render: r => r.inA ? fmt(r.pA) : outCell(r.cutA) },
+  { key: 'pB', label: '今回', render: r => r.inB ? fmt(r.pB) : outCell(r.cutB) },
+  { key: 'gain', label: '上昇値', render: r => r.gain === null ? unknown(OUT_WHY)
       : `<span class="${cls(r.gain)}">${sfmt(r.gain)}</span>` },
-  { key: 'rate', label: '上昇率', render: r => r.rate === null ? '-'
+  { key: 'rate', label: '上昇率', render: r => r.rate === null ? unknown(OUT_WHY)
       : `<span class="${cls(r.rate)}">${r.rate > 0 ? '+' : ''}${r.rate.toFixed(2)}%</span>` },
-  { key: 'perh', label: '時間あたり', render: r => r.perh === null ? '-'
+  { key: 'perh', label: '時間あたり', render: r => r.perh === null ? unknown(OUT_WHY)
       : `<span class="${cls(r.perh)}">${sfmt(Math.round(r.perh))}/h</span>` },
   { key: 'move', label: '順位変動', render: r => {
-      if (!r.inA) return '<span class="tag new">NEW</span>';
-      if (!r.inB) return '<span class="tag out">圏外</span>';
+      if (!r.inA) return `<span class="tag new">NEW</span> <span class="rk">(圏外→${r.rB})</span>`;
+      if (!r.inB) return `<span class="tag out">圏外</span> <span class="rk">(${r.rA}→圏外)</span>`;
       if (r.move === 0) return '<span class="zero">→ 0</span>';
       return `<span class="${cls(r.move)}">${r.move > 0 ? '↑' : '↓'}${Math.abs(r.move)}</span>`
            + ` <span class="rk">(${r.rA}→${r.rB})</span>`; } },
@@ -627,6 +647,15 @@ function drawChart(svg, tip, pts, opts) {
     }
   });
 
+  // 圏外だった時点は、値がないことが分かるよう軸の下端に × を置く
+  const outY = CH.H - CH.B - 5;
+  pts.forEach(p => {
+    if (p.v !== null) return;
+    const x = X(p.x);
+    g += `<path d="M${(x - 3.5).toFixed(1)},${outY - 3.5} l7,7 M${(x + 3.5).toFixed(1)},${outY - 3.5} l-7,7"
+          stroke="#8b91a3" stroke-width="1.6" fill="none"/>`;
+  });
+
   g += '<g id="guide"></g>';
   pts.forEach(p => {
     if (p.v === null) return;
@@ -641,17 +670,19 @@ function drawChart(svg, tip, pts, opts) {
     const box = svg.getBoundingClientRect();
     const mx = (ev.clientX - box.left) * CH.W / box.width;
     let best = null, bd = Infinity;
-    pts.forEach(p => {
-      if (p.v === null) return;
+    pts.forEach(p => {                       // 圏外の点にも合わせられるようにする
       const d = Math.abs(X(p.x) - mx);
       if (d < bd) { bd = d; best = p; }
     });
     if (!best || bd > 60) { guide.innerHTML = ''; tip.classList.add('hidden'); return; }
 
-    const px = X(best.x), py = Y(best.v);
+    const out = best.v === null;
+    const px = X(best.x), py = out ? outY : Y(best.v);
     guide.innerHTML = `<line class="guide" x1="${px}" y1="${CH.T}" x2="${px}" y2="${CH.H - CH.B}"/>`
-                    + `<circle cx="${px}" cy="${py}" r="6" fill="${opts.color}" fill-opacity="0.25"/>`;
-    tip.innerHTML = `<div class="t">${esc(best.label)}</div>${opts.fmtTip(best)}`;
+      + (out ? '' : `<circle cx="${px}" cy="${py}" r="6" fill="${opts.color}" fill-opacity="0.25"/>`);
+    tip.innerHTML = `<div class="t">${esc(best.label)}</div>`
+      + (out ? '<b>圏外</b>' + (best.cut ? `<br><span class="t">${opts.outTip(best.cut)}</span>` : '')
+             : opts.fmtTip(best));
     tip.style.left = (px * box.width / CH.W) + 'px';
     tip.style.top = (py * box.height / CH.H - 10) + 'px';
     tip.classList.remove('hidden');
@@ -663,26 +694,37 @@ function showPlayer(name) {
   const hist = S.map((s, i) => {
     const e = s.entries.find(e => e.n === name);
     const d = pd(s.stamp);
-    return { stamp: s.stamp, e, x: d ? d.getTime() : i };   // 日時が読めなければ等間隔
+    // 圏外のときに「◯◯未満」と示せるよう、その時点の最下位も持っておく
+    return { stamp: s.stamp, e, cut: cutoff(s), x: d ? d.getTime() : i };
   });
   const seen = hist.filter(h => h.e);
+  if (!seen.length) return;                       // どの時点にも載っていない
   const first = seen[0], last = seen[seen.length - 1];
   const best = seen.reduce((a, h) => h.e.r < a.e.r ? h : a, seen[0]);
   const gain = last.e.p - first.e.p;
   const hrs = hoursBetween(first.stamp, last.stamp);
+  const outNow = hist[hist.length - 1].e === undefined;   // いま圏外か
+  const outCount = hist.length - seen.length;
 
-  document.getElementById('mname').innerHTML =
-    esc(name) + `<span class="sub">${seen.length} 件のデータ</span>`;
+  document.getElementById('mname').innerHTML = esc(name) +
+    `<span class="sub">${seen.length} 件のデータ` +
+    (outCount ? ` / 圏外 ${outCount} 回` : '') + '</span>';
 
-  // サマリー
+  // サマリー。圏外の時点は戦闘力が取れないので、古い値を「現在」として見せない
   const cards = [
-    { k: '現在の順位', v: last.e === hist[hist.length - 1].e
-        ? `<span class="rk${last.e.r <= 3 ? ' top' : ''}">${last.e.r}</span> 位`
-        : '<span class="zero">圏外</span>',
+    { k: '現在の順位',
+      v: outNow ? '<span class="tag out">圏外</span>'
+                : `<span class="rk${last.e.r <= 3 ? ' top' : ''}">${last.e.r}</span> 位`,
       s: `最高 ${best.e.r} 位` },
-    { k: '現在の戦闘力', v: fmt(last.e.p), s: last.stamp.slice(5, 16) },
+    outNow
+      ? { k: '最後に見えた戦闘力', v: fmt(last.e.p),
+          s: `${last.stamp.slice(5, 16)} 時点（${last.e.r} 位）` }
+      : { k: '現在の戦闘力', v: fmt(last.e.p), s: last.stamp.slice(5, 16) },
     { k: '合計上昇', v: `<span class="${cls(gain)}">${sfmt(gain)}</span>`,
-      s: first.e.p > 0 ? `${gain >= 0 ? '+' : ''}${(gain / first.e.p * 100).toFixed(1)}%` : '' },
+      s: first.e.p > 0
+        ? `${gain >= 0 ? '+' : ''}${(gain / first.e.p * 100).toFixed(1)}%`
+          + (outCount ? '（圏外の間を除く）' : '')
+        : '' },
     { k: '平均上昇', v: hrs > 0 ? `<span class="${cls(gain)}">${sfmt(Math.round(gain / hrs))}</span>` : '—',
       s: hrs > 0 ? `1 時間あたり（${hrs.toFixed(1)} 時間）` : '期間なし' },
   ];
@@ -700,20 +742,25 @@ function showPlayer(name) {
     boxes.forEach(b => b.style.display = 'block');
     note.innerHTML = '';
     drawChart(document.getElementById('chartPower'), document.getElementById('tipPower'),
-      hist.map(h => ({ x: h.x, label: h.stamp, v: h.e ? h.e.p : null, e: h.e })),
+      hist.map(h => ({ x: h.x, label: h.stamp, v: h.e ? h.e.p : null, cut: h.cut })),
       { color: '#4f8cff', area: true, fmtV: v => fmt(Math.round(v)),
-        fmtTip: p => `<b>${fmt(p.v)}</b>` });
+        fmtTip: p => `<b>${fmt(p.v)}</b>`, outTip: c => `${fmt(c.p)} 未満` });
 
     drawChart(document.getElementById('chartRank'), document.getElementById('tipRank'),
-      hist.map(h => ({ x: h.x, label: h.stamp, v: h.e ? h.e.r : null, e: h.e })),
+      hist.map(h => ({ x: h.x, label: h.stamp, v: h.e ? h.e.r : null, cut: h.cut })),
       { color: '#e8b84b', invert: true, fmtV: v => Math.round(v) + '位',
-        fmtTip: p => `<b>${p.v} 位</b>` });
+        fmtTip: p => `<b>${p.v} 位</b>`, outTip: c => `${c.r} 位より下` });
   }
 
   // 履歴
   let prev = null;
   document.getElementById('mbody').innerHTML = hist.map(h => {
-    if (!h.e) { prev = null; return `<tr><td class="name">${esc(h.stamp)}</td><td colspan="3" class="zero">圏外</td></tr>`; }
+    if (!h.e) {
+      prev = null;                         // 圏外を挟んだら変動は繋げない
+      return `<tr><td class="name">${esc(h.stamp)}</td>`
+           + `<td><span class="tag out">圏外</span></td>`
+           + `<td>${outCell(h.cut)}</td><td>${unknown(OUT_WHY)}</td></tr>`;
+    }
     const d = prev === null ? null : h.e.p - prev;
     prev = h.e.p;
     return `<tr><td class="name">${esc(h.stamp)}</td><td class="rk">${h.e.r}</td><td>${fmt(h.e.p)}</td>` +
