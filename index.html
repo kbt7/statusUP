@@ -11,6 +11,8 @@
     --up: #4caf7d; --down: #e05c5c; --gold: #e8b84b;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  /* hidden 属性は display 指定に負けるので、ここで確実に効かせる */
+  [hidden] { display: none !important; }
   body { background: var(--bg); color: var(--text);
          font-family: "Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif; min-height: 100vh; }
 
@@ -91,6 +93,7 @@
   .tag { font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; border: 1px solid; }
   .tag.new { color: var(--accent); border-color: var(--accent); }
   .tag.out { color: var(--down); border-color: var(--down); }
+  .tag.gen { color: var(--muted); border-color: var(--border); }
   .empty { padding: 30px; text-align: center; color: var(--muted); }
   .note { padding: 10px 14px; margin-bottom: 14px; font-size: 0.82rem; color: var(--muted);
           border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 8px 8px 0; line-height: 1.6; }
@@ -186,6 +189,16 @@
       </p>
       <textarea id="raw" placeholder="ここにランキングを貼り付け（Ctrl+V）"></textarea>
       <div class="input-row">
+        <label>種別
+          <select id="scope">
+            <option value="all">全体ランキング</option>
+            <option value="gen">世代ランキング</option>
+          </select>
+        </label>
+        <label id="genWrap" hidden>第
+          <input type="number" id="gen" min="1" max="99" step="1" value="1" style="width:60px">
+          世代
+        </label>
         <label>日時 <input type="datetime-local" id="stamp"></label>
         <button id="btnAdd" class="primary">取り込む</button>
         <button id="btnClear" class="ghost">クリア</button>
@@ -198,6 +211,7 @@
 
   <!-- 比較 -->
   <div class="panel controls">
+    <label>ランキング <select id="selSeries"></select></label>
     <label>比較元 <select id="selA"></select></label>
     <span class="arrow">→</span>
     <label>比較先 <select id="selB"></select></label>
@@ -225,7 +239,7 @@
     </div>
     <div class="tablewrap">
       <table>
-        <thead><tr><th class="name">日時</th><th>件数</th><th class="name">1位</th><th></th></tr></thead>
+        <thead><tr><th class="name">日時</th><th class="name">種別</th><th>件数</th><th class="name">1位</th><th></th></tr></thead>
         <tbody id="snapBody"></tbody>
       </table>
     </div>
@@ -310,16 +324,28 @@
 
 const KEY = 'statusUP.snapshots';
 
+// ランキングの種別。全体と世代別では順位の意味が違うので、混ぜて比較しない。
+// scope が無い古いデータは全体ランキングとして扱う。
+const seriesKey = s => s.scope === 'gen' ? 'gen:' + s.gen : 'all';
+const seriesLabel = s => s.scope === 'gen' ? `第${s.gen}世代` : '全体';
+const snapKey = s => s.stamp + '|' + seriesKey(s);   // 同じ日時でも種別が違えば別物
+
+function normalize(s) {
+  return s.scope === 'gen' && Number.isFinite(+s.gen)
+    ? { stamp: s.stamp, scope: 'gen', gen: +s.gen, entries: s.entries }
+    : { stamp: s.stamp, scope: 'all', entries: s.entries };
+}
+
 function loadSnaps() {
   try {
     const v = JSON.parse(localStorage.getItem(KEY));
-    return Array.isArray(v) ? v : [];
+    return Array.isArray(v) ? v.map(normalize) : [];
   } catch (e) {
     return [];
   }
 }
 function saveSnaps() {
-  S.sort((a, b) => a.stamp.localeCompare(b.stamp));
+  S.sort((a, b) => a.stamp.localeCompare(b.stamp) || seriesKey(a).localeCompare(seriesKey(b)));
   try {
     localStorage.setItem(KEY, JSON.stringify(S));
   } catch (e) {
@@ -406,6 +432,30 @@ function nowStamp() {
 // ---------------------------------------------------------------- 集計
 
 let iA = 0, iB = 0, tab = 'gain', sortKey = 'gain', sortDir = -1, query = '';
+let series = 'all';   // いま見ているランキングの種別
+
+// 保存されている種別の一覧。全体を先頭に、そのあと世代番号順
+function seriesAll() {
+  const m = new Map();
+  S.forEach(s => m.set(seriesKey(s), seriesLabel(s)));
+  return [...m].sort((a, b) =>
+    a[0] === 'all' ? -1 : b[0] === 'all' ? 1 : +a[0].slice(4) - +b[0].slice(4));
+}
+
+// その種別に属するスナップショットの、S の中での位置
+const seriesIdx = key => S.map((s, i) => [s, i]).filter(([s]) => seriesKey(s) === key).map(([, i]) => i);
+
+// 世代ランキングから「この人は第◯世代」を学習する。
+// 全体ランキングだけでは世代が分からないので、世代ランキングを取り込んだぶんだけ判明する。
+function genMap() {
+  const m = new Map();
+  S.forEach(s => {                        // 新しいものが後に来るので自然に上書きされる
+    if (s.scope !== 'gen') return;
+    s.entries.forEach(e => m.set(e.n, s.gen));
+  });
+  return m;
+}
+let GEN = new Map();
 
 // そのスナップショットに載っている最下位。圏外の人は「これより下」としか分からない
 const cutoff = s => (s.entries && s.entries[s.entries.length - 1]) || null;
@@ -459,8 +509,11 @@ const COLS = [
       ? `<span class="rk${r.rB <= 3 ? ' top' : ''}">${r.rB}</span>`
       : '<span class="tag out">圏外</span>' },
   { key: 'n', label: 'プレイヤー', cls: 'name', render: r => {
+      // 全体ランキングでは、世代ランキングから分かっている人だけ世代を添える
+      const g = series === 'all' ? GEN.get(r.n) : undefined;
+      const gt = g === undefined ? '' : ` <span class="tag gen">第${g}世代</span>`;
       const tag = !r.inA ? ' <span class="tag new">NEW</span>' : '';
-      return esc(r.n) + tag; } },
+      return esc(r.n) + gt + tag; } },
   { key: 'pA', label: '前回', render: r => r.inA ? fmt(r.pA) : outCell(r.cutA) },
   { key: 'pB', label: '今回', render: r => r.inB ? fmt(r.pB) : outCell(r.cutB) },
   { key: 'gain', label: '上昇値', render: r => r.gain === null ? unknown(OUT_WHY)
@@ -502,6 +555,7 @@ function renderCards(rows) {
 }
 
 function render() {
+  GEN = genMap();
   renderSnaps();
 
   if (!S.length) {
@@ -513,8 +567,11 @@ function render() {
     document.getElementById('empty').style.display = 'none';
     return;
   }
-  document.getElementById('note').innerHTML = S.length < 2
-    ? '<div class="note">データが 1 件だけです。時間をおいてもう一度ランキングを貼り付けると、変動が見られます。</div>'
+
+  const idx = seriesIdx(series);
+  document.getElementById('note').innerHTML = idx.length < 2
+    ? `<div class="note">${esc(seriesLabel(S[iA]))}ランキングのデータが ${idx.length} 件だけです。` +
+      '時間をおいてもう一度貼り付けると、変動が見られます。</div>'
     : '';
 
   const all = buildRows();
@@ -547,15 +604,37 @@ function render() {
 function renderSnaps() {
   document.getElementById('snapCount').textContent = S.length ? `${S.length} 件` : '';
   document.getElementById('snapBody').innerHTML = S.map((s, i) =>
-    `<tr><td class="name">${esc(s.stamp)}</td><td>${s.entries.length}</td>` +
+    `<tr><td class="name">${esc(s.stamp)}</td>` +
+    `<td class="name"><span class="tag gen">${esc(seriesLabel(s))}</span></td>` +
+    `<td>${s.entries.length}</td>` +
     `<td class="name">${s.entries.length ? esc(s.entries[0].n) : '-'}</td>` +
     `<td><button class="ghost danger" data-del="${i}">削除</button></td></tr>`).join('')
-    || '<tr><td colspan="4" class="empty">まだデータがありません</td></tr>';
+    || '<tr><td colspan="5" class="empty">まだデータがありません</td></tr>';
 
+  // 種別セレクタ
+  const list = seriesAll();
+  const selS = document.getElementById('selSeries');
+  selS.innerHTML = list.map(([k, label]) =>
+    `<option value="${esc(k)}">${esc(label)}（${seriesIdx(k).length}）</option>`).join('');
+  selS.value = series;
+  selS.disabled = list.length < 2;
+
+  // 比較の候補は同じ種別のものだけ。全体と世代別では順位の意味が違うため
+  const idx = seriesIdx(series);
+  const opts = idx.map(i => `<option value="${i}">${esc(S[i].stamp)}</option>`).join('');
   const selA = document.getElementById('selA'), selB = document.getElementById('selB');
-  const opts = S.map((s, i) => `<option value="${i}">${esc(s.stamp)}</option>`).join('');
   selA.innerHTML = opts; selB.innerHTML = opts;
   selA.value = iA; selB.value = iB;
+}
+
+// その種別の中で、比較する 2 時点を選び直す（既定は直近 2 件）
+function pickSeries(key) {
+  series = key;
+  const idx = seriesIdx(key);
+  if (!idx.length) return false;
+  iB = idx[idx.length - 1];
+  iA = idx.length >= 2 ? idx[idx.length - 2] : iB;
+  return true;
 }
 
 // ---------------------------------------------------------------- 個人の推移
@@ -691,7 +770,9 @@ function drawChart(svg, tip, pts, opts) {
 }
 
 function showPlayer(name) {
-  const hist = S.map((s, i) => {
+  // 種別をまたぐと順位の意味が変わるので、いま見ているランキングの中だけで追う
+  const hist = seriesIdx(series).map((si, i) => {
+    const s = S[si];
     const e = s.entries.find(e => e.n === name);
     const d = pd(s.stamp);
     // 圏外のときに「◯◯未満」と示せるよう、その時点の最下位も持っておく
@@ -706,8 +787,11 @@ function showPlayer(name) {
   const outNow = hist[hist.length - 1].e === undefined;   // いま圏外か
   const outCount = hist.length - seen.length;
 
+  // 世代ランキングを見ているときは、見出しに種別が出るのでバッジは省く
+  const g = series === 'all' ? GEN.get(name) : undefined;
   document.getElementById('mname').innerHTML = esc(name) +
-    `<span class="sub">${seen.length} 件のデータ` +
+    (g === undefined ? '' : ` <span class="tag gen">第${g}世代</span>`) +
+    `<span class="sub">${esc(seriesLabel(S[iA]))} / ${seen.length} 件のデータ` +
     (outCount ? ` / 圏外 ${outCount} 回` : '') + '</span>';
 
   // サマリー。圏外の時点は戦闘力が取れないので、古い値を「現在」として見せない
@@ -791,22 +875,35 @@ function doImport() {
   const v = document.getElementById('stamp').value;   // "YYYY-MM-DDTHH:MM"
   const stamp = v ? v.replace('T', ' ').slice(0, 16) : nowStamp();
 
-  const at = S.findIndex(s => s.stamp === stamp);
-  if (at >= 0 && !confirm(`${stamp} のデータは既にあります。上書きしますか？`)) return;
-  if (at >= 0) S[at] = { stamp, entries }; else S.push({ stamp, entries });
+  const isGen = document.getElementById('scope').value === 'gen';
+  const gen = +document.getElementById('gen').value;
+  if (isGen && !(Number.isInteger(gen) && gen >= 1)) {
+    setResult('世代は 1 以上の整数で指定してください。', false);
+    return;
+  }
+  const snap = normalize(isGen ? { stamp, scope: 'gen', gen, entries } : { stamp, entries });
+  const label = seriesLabel(snap);
+
+  const at = S.findIndex(s => snapKey(s) === snapKey(snap));
+  if (at >= 0 && !confirm(`${stamp} の${label}ランキングは既にあります。上書きしますか？`)) return;
+  if (at >= 0) S[at] = snap; else S.push(snap);
 
   saveSnaps();
-  iB = S.findIndex(s => s.stamp === stamp);
-  iA = S.length >= 2 ? Math.max(0, iB - 1) : iB;
+  GEN = genMap();
+  pickSeries(seriesKey(snap));                       // 取り込んだ種別に切り替える
+  iB = S.findIndex(s => snapKey(s) === snapKey(snap));
+  const idx = seriesIdx(series);
+  const pos = idx.indexOf(iB);
+  iA = pos > 0 ? idx[pos - 1] : iB;
 
-  const top = entries[0], last = entries[entries.length - 1];
-  setResult(`<b>${stamp}</b> として ${entries.length} 件を取り込みました。` +
-    `（1位 ${esc(top.n)} ${fmt(top.p)} / 最下位 ${esc(last.n)} ${fmt(last.p)}）` +
+  const top = entries[0], bottom = entries[entries.length - 1];
+  setResult(`<b>${stamp}</b> の<b>${esc(label)}</b>ランキングとして ${entries.length} 件を取り込みました。` +
+    `（1位 ${esc(top.n)} ${fmt(top.p)} / 最下位 ${esc(bottom.n)} ${fmt(bottom.p)}）` +
     (warn.length ? '<ul>' + warn.map(w => `<li>${esc(w)}</li>`).join('') + '</ul>' : ''), true);
 
   document.getElementById('raw').value = '';
   render();
-  if (S.length >= 2) document.getElementById('cards').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (idx.length >= 2) document.getElementById('cards').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 // ---------------------------------------------------------------- 入出力
@@ -842,6 +939,8 @@ function validate(v) {
       throw new Error(`${where}: 日時の形式が違います`);
     if (!Array.isArray(s.entries) || !s.entries.length)
       throw new Error(`${where}（${s.stamp}）: プレイヤーが入っていません`);
+    if (s.scope === 'gen' && !(Number.isInteger(+s.gen) && +s.gen >= 1))
+      throw new Error(`${where}（${s.stamp}）: 世代の指定が正しくありません`);
 
     const entries = s.entries.map(e => {
       if (!e || typeof e.n !== 'string' || !e.n)
@@ -851,7 +950,7 @@ function validate(v) {
       return { r: +e.r, n: e.n, p: +e.p };   // 余計な項目は捨てる
     }).sort((a, b) => a.r - b.r);
 
-    return { stamp: s.stamp, entries };
+    return normalize({ stamp: s.stamp, scope: s.scope, gen: s.gen, entries });
   });
 }
 
@@ -860,18 +959,20 @@ let pending = null;
 
 function showPreview(list, from) {
   pending = list;
-  const add = list.filter(s => !S.some(x => x.stamp === s.stamp));
-  const upd = list.filter(s => S.some(x => x.stamp === s.stamp));
+  const add = list.filter(s => !S.some(x => snapKey(x) === snapKey(s)));
+  const upd = list.filter(s => S.some(x => snapKey(x) === snapKey(s)));
   const stamps = list.map(s => s.stamp).sort();
+  const kinds = [...new Set(list.map(seriesLabel))];
 
   document.getElementById('preview').innerHTML = `
     <div class="preview">
       <div class="ph"><b>${esc(from)}</b> の内容</div>
       <div class="pb">
         ${list.length} 件（${esc(stamps[0])} 〜 ${esc(stamps[stamps.length - 1])}）<br>
+        種別: ${esc(kinds.join('、'))}<br>
         <span class="add">追加 ${add.length} 件</span>
         ${upd.length ? ` / <span class="upd">上書き ${upd.length} 件</span>` : ''}
-        ${upd.length ? `<br><span class="upd">上書き: ${upd.map(s => esc(s.stamp)).join('、')}</span>` : ''}
+        ${upd.length ? `<br><span class="upd">上書き: ${upd.map(s => esc(s.stamp + ' ' + seriesLabel(s))).join('、')}</span>` : ''}
         <br>取り込むと、保存済みは ${S.length} 件 → ${S.length + add.length} 件になります。
       </div>
       <div class="pf">
@@ -892,12 +993,13 @@ function clearPreview() {
 function commitImport() {
   let add = 0, upd = 0;
   pending.forEach(s => {
-    const at = S.findIndex(x => x.stamp === s.stamp);
+    const at = S.findIndex(x => snapKey(x) === snapKey(s));
     if (at >= 0) { S[at] = s; upd++; } else { S.push(s); add++; }
   });
   saveSnaps();
-  iB = Math.max(0, S.length - 1);
-  iA = Math.max(0, S.length - 2);
+  GEN = genMap();
+  if (!seriesIdx(series).length) pickSeries(seriesAll()[0][0]);   // 種別が消えていたら選び直す
+  else pickSeries(series);
   render();
   clearPreview();
   renderHandoff();
@@ -985,8 +1087,15 @@ drop.addEventListener('drop', e => {
   if (f) doImportFile(f);
 });
 
+document.getElementById('selSeries').onchange = e => { pickSeries(e.target.value); render(); };
 document.getElementById('selA').onchange = e => { iA = +e.target.value; render(); };
 document.getElementById('selB').onchange = e => { iB = +e.target.value; render(); };
+
+// 世代ランキングを選んだときだけ世代番号の入力を出す
+const scopeSel = document.getElementById('scope');
+scopeSel.onchange = () => {
+  document.getElementById('genWrap').hidden = scopeSel.value !== 'gen';
+};
 document.getElementById('btnSwap').onclick = () => { [iA, iB] = [iB, iA]; render(); };
 document.getElementById('q').oninput = e => { query = e.target.value.trim(); render(); };
 
@@ -1018,10 +1127,13 @@ document.getElementById('body').onclick = e => {
 document.getElementById('snapBody').onclick = e => {
   const i = e.target.dataset?.del;
   if (i === undefined) return;
-  if (!confirm(`${S[+i].stamp} のデータを削除しますか？`)) return;
+  if (!confirm(`${S[+i].stamp} の${seriesLabel(S[+i])}ランキングを削除しますか？`)) return;
   S.splice(+i, 1);
   saveSnaps();
-  iB = Math.max(0, S.length - 1); iA = Math.max(0, S.length - 2);
+  GEN = genMap();
+  const list = seriesAll();
+  if (!list.length) { series = 'all'; iA = iB = 0; }
+  else pickSeries(seriesIdx(series).length ? series : list[0][0]);
   render();
 };
 
@@ -1039,8 +1151,9 @@ document.getElementById('raw').addEventListener('paste', () => {
   setTimeout(() => { document.getElementById('stamp').value = nowStamp().replace(' ', 'T'); }, 0);
 });
 
-iB = Math.max(0, S.length - 1);
-iA = Math.max(0, S.length - 2);
+GEN = genMap();
+const first = seriesAll();
+pickSeries(first.length ? first[0][0] : 'all');   // 既定は全体ランキング
 render();
 </script>
 </body>
