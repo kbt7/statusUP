@@ -81,12 +81,16 @@
        cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--panel); }
   th:hover { color: var(--text); }
   th.sorted { color: var(--accent); }
+  th.nosort { cursor: default; }
+  th.nosort:hover { color: var(--muted); }
   td { border-bottom: 1px solid rgba(46,51,66,0.5); }
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: var(--panel2); }
   .name { text-align: left; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
   .rk { color: var(--muted); }
   .rk.top { color: var(--gold); font-weight: 600; }
+  .pos { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pos.top { color: var(--gold); font-weight: 600; }
   .up { color: var(--up); }
   .down { color: var(--down); }
   .zero { color: var(--muted); }
@@ -505,6 +509,10 @@ const unknown = why => `<span class="zero" title="${esc(why)}">—</span>`;
 const OUT_WHY = '圏外の時点があるため計算できません';
 
 const COLS = [
+  // いまの並び順での位置。「上昇値で並べたとき何位か」がすぐ分かるようにするための列
+  { key: 'pos', label: '#', nosort: true, render: r => r.pos === null
+      ? '<span class="zero" title="計算できないため順位なし">—</span>'
+      : `<span class="pos${r.pos <= 3 ? ' top' : ''}">${r.pos}</span>` },
   { key: 'cur', label: '順位', render: r => r.inB
       ? `<span class="rk${r.rB <= 3 ? ' top' : ''}">${r.rB}</span>`
       : '<span class="tag out">圏外</span>' },
@@ -579,10 +587,6 @@ function render() {
 
   const t = TABS.find(x => x.id === tab);
   let rows = all.filter(t.filter);
-  if (query) {
-    const q = query.toLowerCase();
-    rows = rows.filter(r => r.n.toLowerCase().includes(q));
-  }
   rows.sort((a, b) => {
     const x = a[sortKey], y = b[sortKey];
     if (x === null || x === undefined) return 1;
@@ -590,9 +594,26 @@ function render() {
     return typeof x === 'string' ? x.localeCompare(y, 'ja') * sortDir : (x - y) * sortDir;
   });
 
-  document.getElementById('head').innerHTML = COLS.map(c =>
-    `<th data-k="${c.key}" class="${c.cls || ''}${sortKey === c.key ? ' sorted' : ''}">` +
-    `${c.label}${sortKey === c.key ? (sortDir < 0 ? ' ▼' : ' ▲') : ''}</th>`).join('');
+  // 並び順での位置を振る。同じ値なら同順位、計算できないものは順位なし。
+  // 絞り込みの前に振るので、名前で絞っても全体の中での位置が変わらない
+  let prevV, prevPos = 0;
+  rows.forEach((r, i) => {
+    const v = r[sortKey];
+    if (v === null || v === undefined) { r.pos = null; return; }
+    if (i > 0 && v === prevV) r.pos = prevPos;
+    else { r.pos = i + 1; prevPos = r.pos; }
+    prevV = v;
+  });
+
+  if (query) {
+    const q = query.toLowerCase();
+    rows = rows.filter(r => r.n.toLowerCase().includes(q));
+  }
+
+  document.getElementById('head').innerHTML = COLS.map(c => c.nosort
+    ? `<th class="nosort ${c.cls || ''}" title="いまの並び順での位置">${c.label}</th>`
+    : `<th data-k="${c.key}" class="${c.cls || ''}${sortKey === c.key ? ' sorted' : ''}">` +
+      `${c.label}${sortKey === c.key ? (sortDir < 0 ? ' ▼' : ' ▲') : ''}</th>`).join('');
 
   document.getElementById('body').innerHTML = rows.map((r, i) =>
     `<tr data-i="${i}">` + COLS.map(c => `<td class="${c.cls || ''}">${c.render(r)}</td>`).join('') + '</tr>').join('');
@@ -1113,6 +1134,7 @@ document.getElementById('head').onclick = e => {
   const th = e.target.closest('th');
   if (!th) return;
   const k = th.dataset.k;
+  if (!k) return;                       // # 列は並べ替えの対象にしない
   if (sortKey === k) sortDir = -sortDir;
   else { sortKey = k; sortDir = (k === 'n' || k === 'cur') ? 1 : -1; }
   render();
